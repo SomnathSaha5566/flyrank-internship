@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Content Refresh Opportunity Scoring | FlyRank Capstone</title>
+<style>
+:root{--ink:#17202a;--muted:#5b6570;--line:#dfe3e8;--soft:#f5f7f9;--accent:#174ea6}
+*{box-sizing:border-box} body{margin:0;background:#fff;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.68}
+main{max-width:1000px;margin:auto;padding:48px 28px 80px}.hero{padding:55px 0 35px;border-bottom:1px solid var(--line)}
+.kicker{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:800}
+h1{font-size:46px;line-height:1.08;letter-spacing:-.035em;margin:15px 0}
+h2{font-size:28px;margin:55px 0 15px;letter-spacing:-.015em} h3{margin-top:30px}
+p{margin:12px 0}.abstract{background:var(--soft);padding:24px;border-radius:14px;font-size:18px}
+.callout{border-left:4px solid var(--accent);background:#f7f9fc;padding:18px 20px;margin:22px 0}
+.warning{border-left-color:#b26a00;background:#fff8ec}
+img{max-width:100%;height:auto;border:1px solid var(--line);border-radius:10px;margin:12px 0 4px}
+.caption{font-size:13px;color:var(--muted);margin:0 0 20px}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}th,td{border:1px solid var(--line);padding:10px;vertical-align:top;text-align:left}th{background:var(--soft)}
+.metric{font-size:34px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0}.card{border:1px solid var(--line);padding:18px;border-radius:12px}.small{font-size:13px;color:var(--muted)}
+code{background:#f0f2f4;padding:2px 5px;border-radius:5px}a{color:var(--accent)}
+footer{border-top:1px solid var(--line);margin-top:65px;padding-top:24px;color:var(--muted)}
+@media(max-width:700px){h1{font-size:35px}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<header class="hero">
+<div class="kicker">FlyRank ML Internship — Capstone Research Paper</div>
+<h1>Predicting Content Refresh Opportunities from Historical Search Performance Signals</h1>
+<p><strong>Lane:</strong> Refresh / Content Opportunity Scoring</p>
+<p><strong>Decision supported:</strong> prioritize pages for editorial review using historical search-performance patterns.</p>
+</header>
+
+<section><h2>Abstract</h2>
+<p class="abstract">This capstone asks whether historical search-performance and content attributes can be used to prioritize pages experiencing severe traffic decay for editorial review. The workflow frames the task as scoring and ranking, defines a historical decay proxy, builds a Random Forest model, and compares it with a transparent baseline rule. On the Week 5 test split, the Random Forest achieved 0.632 precision and 0.482 recall versus 0.345 precision and 0.416 recall for the baseline, while the Week 6 grouped validation reduced precision to 0.590 when client boundaries were respected. Historical clicks and impressions were the strongest reported model features, accounting for 0.573 and 0.274 importance respectively in the Week 5 model. The resulting queue is intended as directional decision-support for content prioritization, not as proof of ranking causes or a guarantee that rewriting will recover traffic.</p>
+</section>
+
+<section><h2>1. Introduction / Problem Statement</h2>
+<p>Content teams have more pages to review than they can realistically update. A fixed rule such as “rewrite every page whose traffic falls by 20%” is blunt: the same percentage decline can mean very different things depending on historical volume, content age, competition, and search visibility.</p>
+<p>The project therefore treats refresh prioritization as a <strong>scoring and ranking</strong> problem. The desired output is not merely a binary “decay / no decay” label, but an ordered queue that helps a content team decide what to review first.</p>
+<div class="callout"><strong>Research question:</strong> Can historical content and search-performance signals provide a useful, repeatable ranking of pages experiencing severe traffic decay?</div>
+</section>
+
+<section><h2>2. Data</h2>
+<p>The supplied weekly notebooks use an anonymized FlyRank starter dataset loaded as <code>content_refresh_anonymized.csv</code>. The unit of analysis is one content page. The visible schema includes content and search attributes such as content age, word count, search volume, competition, CPC, impressions, clicks, CTR, average position, engagement-related fields, and traffic trend.</p>
+<p>The modeling notebook uses the following eight features:</p>
+<table><tr><th>Feature</th><th>Role</th></tr>
+<tr><td>content_age_days</td><td>Content staleness / age signal</td></tr>
+<tr><td>word_count</td><td>Content size</td></tr>
+<tr><td>search_volume</td><td>Demand signal</td></tr>
+<tr><td>competition</td><td>Competitive search signal</td></tr>
+<tr><td>cpc</td><td>Keyword-value proxy</td></tr>
+<tr><td>impressions_prev_30d</td><td>Historical visibility</td></tr>
+<tr><td>clicks_prev_30d</td><td>Historical traffic</td></tr>
+<tr><td>avg_position</td><td>Historical search position</td></tr>
+</table>
+<p>The Week 5 target proxy is severe recent traffic decay: <code>clicks_last_30d &lt; 0.8 × clicks_prev_30d</code>, provided <code>impressions_prev_30d &gt; 100</code>. The supplied notebooks describe this as a proxy rather than a causal “refresh success” label.</p>
+<div class="callout warning"><strong>Public-safe reporting:</strong> this paper uses anonymized content identifiers and aggregated/model outputs. Client names, domains, URLs, private queries, credentials, and raw warehouse exports are not published.</div>
+</section>
+
+<section><h2>3. Methodology</h2>
+<h3>3.1 Baseline action score</h3>
+<p>The Week 4 baseline flags a page when it is older than 180 days, has a traffic trend below −20%, and has more than 1,000 impressions over 90 days. Its reason code is <code>decaying_historical_content</code> and its action is <code>refresh_content</code>. The score weights the magnitude of negative trend by log-transformed impression volume.</p>
+<p>The baseline produced <strong>4,372 flagged rows</strong> in the supplied notebook run. The highest-scoring example had a score of 10.975, a −89.3% trend, 217,415 impressions over 90 days, and content age of 225 days.</p>
+<img src="assets/age_signal.png" alt="Observed traffic trend by content age bucket">
+<p class="caption">Figure 1. Signal check reported in Week 4. The notebook's written verdict should be interpreted cautiously: the displayed bucket means do not show the “Oldest” bucket as the most negative; the “New” bucket is most negative in this run.</p>
+
+<h3>3.2 Random Forest model</h3>
+<p>The Week 5 model is a Random Forest Classifier with 100 trees, <code>max_depth=10</code>, and <code>random_state=42</code>. The original Week 5 split is an 80/20 stratified random split. Missing feature values are filled with zero.</p>
+<p>The model was compared with the Week 4 baseline on the same test set. The primary reported metrics were precision and recall.</p>
+
+<h3>3.3 Validation and leakage audit</h3>
+<p>Week 6 adds an important generalization check by grouping the split by <code>client_id</code>, ensuring that clients in the test set are not seen in training. Precision decreased from <strong>0.657</strong> under the random split to <strong>0.590</strong> under the grouped split. This is a more conservative estimate of cross-client generalization than the random split.</p>
+<p>The supplied audit reports no direct label leakage because the model features use historical columns while the target uses <code>clicks_last_30d</code>. It also identifies a remaining caveat: <code>avg_position</code> should be confirmed to represent only the historical feature window rather than an aggregate that reaches into the target period.</p>
+<img src="assets/validation_audit.png" alt="Validation audit precision">
+<p class="caption">Figure 2. Precision before and after client-grouped validation.</p>
+</section>
+
+<section><h2>4. Results</h2>
+<div class="grid">
+<div class="card"><div class="metric">0.632</div><div>Random Forest precision</div></div>
+<div class="card"><div class="metric">0.482</div><div>Random Forest recall</div></div>
+<div class="card"><div class="metric">0.590</div><div>Grouped-split precision</div></div>
+</div>
+<table><tr><th>Evaluation</th><th>Precision</th><th>Recall</th></tr>
+<tr><td>Week 5 baseline</td><td>0.345</td><td>0.416</td></tr>
+<tr><td>Week 5 Random Forest</td><td><strong>0.632</strong></td><td><strong>0.482</strong></td></tr>
+<tr><td>Week 6 Random Forest, grouped by client</td><td><strong>0.590</strong></td><td>Not reported</td></tr>
+</table>
+<img src="assets/model_vs_baseline.png" alt="Model versus baseline">
+<p class="caption">Figure 3. Reported test-set precision and recall from Week 5.</p>
+
+<p>Relative to the Week 5 baseline, the Random Forest increased precision by 0.287 points and recall by 0.066 points. The grouped validation shows that precision falls when client boundaries are respected, reinforcing the need to report the conservative grouped result rather than relying only on the random split.</p>
+
+<h3>Feature importance</h3>
+<img src="assets/feature_importance.png" alt="Feature importance">
+<p class="caption">Figure 4. Top feature importances reported by the Week 5 Random Forest.</p>
+<p><code>clicks_prev_30d</code> had importance 0.5728 and <code>impressions_prev_30d</code> had importance 0.2743. <code>avg_position</code> and <code>word_count</code> followed at 0.0468 and 0.0377. These are model importance measures, not causal effects.</p>
+</section>
+
+<section><h2>5. Ranked Recommendations / Action Playbook</h2>
+<p>Week 7 turns model probabilities into a content action queue. The documented intended action logic is:</p>
+<table><tr><th>Action</th><th>Reason code</th><th>Documented criterion</th></tr>
+<tr><td><code>rewrite_full</code></td><td><code>severe_historical_decay_high_vol</code></td><td>Predicted decay probability &gt; 0.7, age &gt; 365 days, historical impressions &gt; 10,000.</td></tr>
+<tr><td><code>refresh_metadata</code></td><td><code>click_drop_stable_impressions</code></td><td>Predicted decay with stable impressions, suggesting a metadata/snippet review.</td></tr>
+<tr><td><code>monitor</code></td><td><code>low_confidence_decay</code></td><td>Predicted decay probability between 0.5 and 0.7.</td></tr>
+</table>
+<p>The supplied Week 7 export contains <strong>4,226 scored rows</strong> after filtering out <code>no_action</code>. The highest exported probability was 0.857947 for an anonymized content ID, followed by 0.851075 and 0.849710.</p>
+<table><tr><th>Rank</th><th>Anonymous page</th><th>Probability</th><th>Exported action</th><th>Trend %</th><th>90d impressions</th></tr>
+<tr><td>1</td><td>content_910077c1bba4</td><td>0.857947</td><td>rewrite_full</td><td>−2.2%</td><td>902</td></tr>
+<tr><td>2</td><td>content_520c30e40873</td><td>0.851075</td><td>rewrite_full</td><td>−1.8%</td><td>1,300</td></tr>
+<tr><td>3</td><td>content_5fdd3001da55</td><td>0.849710</td><td>rewrite_full</td><td>−6.7%</td><td>376</td></tr>
+<tr><td>4</td><td>content_2557c1c418b6</td><td>0.846718</td><td>rewrite_full</td><td>+20.5%</td><td>724</td></tr>
+<tr><td>5</td><td>content_f9324da8eb1</td><td>0.844033</td><td>rewrite_full</td><td>+23.8%</td><td>716</td></tr>
+</table>
+<div class="callout warning"><strong>Implementation audit:</strong> the Week 7 prose specifies age/impression conditions and a separate <code>refresh_metadata</code> action, but the Week 7 export code actually maps only probability &gt; 0.7 to <code>rewrite_full</code>, 0.5–0.7 to <code>monitor</code>, and otherwise <code>no_action</code>. The final implementation should reconcile this before claiming the richer action logic is deployed. Several top exported rows also have positive or only mildly negative 90-day trend, so their “rewrite_full” status should be human-reviewed rather than treated as a proven refresh need.</div>
+
+<h3>Recommended editorial workflow</h3>
+<ol>
+<li>Start with the highest-confidence queue items, but verify business relevance and current content status.</li>
+<li>For high-confidence decay pages, determine whether the page is still strategically relevant before rewriting.</li>
+<li>Where visibility is stable but clicks are weak, inspect title/meta presentation as a review hypothesis rather than a causal conclusion.</li>
+<li>Use <code>monitor</code> for borderline scores and avoid spending scarce editorial time without corroborating evidence.</li>
+<li>Never automate publication of model-generated rewrites. Human review remains required.</li>
+</ol>
+</section>
+
+<section><h2>6. Limitations & Honest Framing</h2>
+<ul>
+<li>The target is a historical decay proxy, not observed post-refresh improvement.</li>
+<li>The analysis is observational; it cannot establish that rewriting a page causes traffic recovery.</li>
+<li>The Week 5 random split can benefit from shared client patterns. The Week 6 grouped split provides a more conservative cross-client check.</li>
+<li>The model does not inspect article text or competitor content, so it prioritizes <em>where</em> to review rather than determining exactly <em>what</em> to change.</li>
+<li>Seasonality, demand changes, site-wide events, measurement changes, and search-engine changes may affect the observed outcome.</li>
+<li>The Week 6 audit notes a possible subtle leakage risk if <code>avg_position</code> is computed over a window that overlaps the target period; this should be verified before a final production claim.</li>
+</ul>
+<div class="callout"><strong>Safe conclusion:</strong> The supplied experiments support the claim that historical search-performance and content signals can provide useful directional prioritization. They do not prove Google ranking factors, prove causal refresh impact, or guarantee traffic recovery.</div>
+</section>
+
+<section><h2>7. Reproducibility</h2>
+<p>The supplied work is organized as a weekly progression:</p>
+<table><tr><th>Notebook</th><th>Contribution</th></tr>
+<tr><td>W02 — ML task framing</td><td>Scoring/ranking task, decay proxy, success metrics, unit of analysis.</td></tr>
+<tr><td>W04 — baseline score</td><td>Rule-based refresh queue and reason code.</td></tr>
+<tr><td>W05 — model</td><td>Random Forest, baseline comparison, feature importance.</td></tr>
+<tr><td>W06 — validation audit</td><td>Grouped validation, leakage audit, claim rewrite.</td></tr>
+<tr><td>W07 — action playbook</td><td>Probability-to-action mapping and final scoring export.</td></tr>
+</table>
+<p>Place these notebooks and the final capstone notebook under <code>work/</code>. The repository must contain <code>submission/paper_url.txt</code> with exactly one line containing the deployed paper URL.</p>
+</section>
+
+<section><h2>8. Acknowledgments & Data Credit</h2>
+<p><strong>Built on the FlyRank ML Internship dataset.</strong> Data source: <a href="https://flyrank.ai" target="_blank" rel="noopener">FlyRank</a>.</p>
+</section>
+
+<footer>
+<p><strong>Capstone paper prepared from the supplied FlyRank internship notebooks.</strong></p>
+<p>Repository: <a href="https://github.com/SomnathSaha5566/flyrank-internship" target="_blank" rel="noopener">github.com/SomnathSaha5566/flyrank-internship</a></p>
+<p>Before publishing, update the paper URL in <code>submission/paper_url.txt</code> after GitHub Pages is enabled.</p>
+</footer>
+</main></body></html>
